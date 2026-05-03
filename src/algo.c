@@ -17,6 +17,7 @@ static void compute_centroid(face_t *f, double *cx, double *cy) {
     
     if (!curr) return;
     
+    int guard = 100000;
     do {
         if (curr->origin) {
             sum_x += curr->origin->x;
@@ -24,6 +25,7 @@ static void compute_centroid(face_t *f, double *cx, double *cy) {
             num_vertices++;
         }
         curr = curr->next;
+        if (--guard <= 0) break;
     } while (curr && curr != start);
     
     if (num_vertices > 0) {
@@ -156,23 +158,27 @@ coverage_map_t *get_coverage_map(dcel_t *d) {
         half_edge_t *start = f->outer_edge;
         half_edge_t *curr = start;
         if (curr) {
+            int g1 = 100000;
             do {
                 if (curr->origin) vcount++;
                 curr = curr->next;
+                if (--g1 <= 0) break;
             } while (curr && curr != start);
         }
-        
+
         map->cells[i].num_points = vcount;
         if (vcount > 0) {
             map->cells[i].polygon_coords = calloc(vcount * 2, sizeof(double));
             int idx = 0;
             curr = start;
+            int g2 = 100000;
             do {
                 if (curr->origin) {
                     map->cells[i].polygon_coords[idx++] = curr->origin->x;
                     map->cells[i].polygon_coords[idx++] = curr->origin->y;
                 }
                 curr = curr->next;
+                if (--g2 <= 0) break;
             } while (curr && curr != start);
         }
     }

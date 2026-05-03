@@ -423,7 +423,7 @@ dcel_t* voronoi_build(point_t* sites, int n) {
         }
         for(int e1=0; e1<fecount; e1++) {
             for(int e2=0; e2<fecount; e2++) {
-                if(e1 != e2 && face_edges[e1]->twin->origin == face_edges[e2]->origin) {
+                if(e1 != e2 && face_edges[e1]->twin && face_edges[e1]->twin->origin != NULL && face_edges[e1]->twin->origin == face_edges[e2]->origin) {
                     face_edges[e1]->next = face_edges[e2];
                     face_edges[e2]->prev = face_edges[e1];
                     break;

@@ -78,11 +78,18 @@ def _load():
     _facilities_arr = arr
     _facilities_n = n
     _root = ctypes.c_void_p(lib.kd_build(arr, ctypes.c_int(n)))
-    # init_dcel() is called here now:
     try:
         init_dcel()
     except Exception as e:
         print(f"[geodispatch] warning: init_dcel failed: {e}", file=sys.stderr)
+
+    # initialise state manager so /set-state and /facility-states work
+    try:
+        import state_manager
+        state_manager.init_from_facilities(facilities)
+    except Exception as e:
+        print(f"[geodispatch] warning: state_manager init failed: {e}", file=sys.stderr)
+
     print(f"[geodispatch] {n} facilities loaded.", file=sys.stderr)
 
 def _enrich(pt):
