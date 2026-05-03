@@ -106,25 +106,62 @@ static int clip_against_edge(const vec2_t *in_pts, int in_n,
 
 /*
  * Walk the face's outer_edge ring and collect origin vertices.
+ * Falls back to scanning all DCEL edges if next-chain gives fewer
+ * than 3 vertices (handles broken rings from voronoi_build).
  */
-static int collect_face_vertices(face_t *f, vec2_t *buf, int max_n)
+static int collect_face_vertices(dcel_t *d, face_t *f, vec2_t *buf, int max_n)
 {
-    if (!f || !f->outer_edge) return 0;
+    if (!f) return 0;
 
-    int n = 0;
-    half_edge_t *start = f->outer_edge;
-    half_edge_t *he    = start;
-    int guard = 100000;
-    do {
-        if (he->origin && n < max_n) {
-            buf[n].x = he->origin->x;
-            buf[n].y = he->origin->y;
-            n++;
+    /* Primary: next-chain traversal */
+    if (f->outer_edge) {
+        int n = 0;
+        half_edge_t *start = f->outer_edge;
+        half_edge_t *he    = start;
+        int guard = max_n + 10;
+        do {
+            if (he->origin && n < max_n) {
+                buf[n].x = he->origin->x;
+                buf[n].y = he->origin->y;
+                n++;
+            }
+            he = he->next;
+            if (--guard <= 0) break;
+        } while (he && he != start);
+        if (n >= 3) return n;
+    }
+
+    /* Fallback: scan all DCEL edges for this face and sort into ring */
+    if (!d) return 0;
+
+    half_edge_t **fe = (half_edge_t **)malloc((size_t)d->ne * sizeof(half_edge_t *));
+    if (!fe) return 0;
+    int fc = 0;
+    for (int e = 0; e < d->ne; e++) {
+        half_edge_t *he = d->edges[e];
+        if (he->face == f && he->origin != NULL)
+            fe[fc++] = he;
+    }
+    if (fc < 3) { free(fe); return 0; }
+
+    /* Sort: fe[i].twin->origin == fe[i+1].origin */
+    for (int i = 0; i < fc - 1; i++) {
+        if (!fe[i]->twin || !fe[i]->twin->origin) continue;
+        vertex_t *want = fe[i]->twin->origin;
+        for (int j = i + 1; j < fc; j++) {
+            if (fe[j]->origin == want) {
+                half_edge_t *tmp = fe[i + 1]; fe[i + 1] = fe[j]; fe[j] = tmp;
+                break;
+            }
         }
-        he = he->next;
-        if (--guard <= 0) break;
-    } while (he && he != start && n < max_n);
+    }
 
+    int n = (fc < max_n) ? fc : max_n;
+    for (int i = 0; i < n; i++) {
+        buf[i].x = fe[i]->origin->x;
+        buf[i].y = fe[i]->origin->y;
+    }
+    free(fe);
     return n;
 }
 
@@ -216,7 +253,7 @@ void clip_to_bbox(dcel_t *d, double xmin, double ymin,
         face_t *f = d->faces[fi];
         if (!f || !f->outer_edge) continue;
 
-        int n = collect_face_vertices(f, buf_a, MAX_CLIP_VERTS);
+        int n = collect_face_vertices(d, f, buf_a, MAX_CLIP_VERTS);
         if (n < 3) continue;
 
         /* Clip against 4 edges: left, right, bottom, top */
@@ -258,7 +295,7 @@ double cell_area(dcel_t *d, int face_id)
     }
 
     vec2_t verts[MAX_CLIP_VERTS];
-    int n = collect_face_vertices(f, verts, MAX_CLIP_VERTS);
+    int n = collect_face_vertices(d, f, verts, MAX_CLIP_VERTS);
     if (n < 3) {
         f->area = 0.0;
         return 0.0;

@@ -1,5 +1,1 @@
-fastapi
-uvicorn[standard]
-pydantic
-pandas
-matplotlib
+# No dependencies — stdlib only (http.server, json, subprocess, math, pathlib)
