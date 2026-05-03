@@ -114,6 +114,7 @@ static int collect_face_vertices(face_t *f, vec2_t *buf, int max_n)
     int n = 0;
     half_edge_t *start = f->outer_edge;
     half_edge_t *he    = start;
+    int guard = 100000;
     do {
         if (he->origin && n < max_n) {
             buf[n].x = he->origin->x;
@@ -121,6 +122,7 @@ static int collect_face_vertices(face_t *f, vec2_t *buf, int max_n)
             n++;
         }
         he = he->next;
+        if (--guard <= 0) break;
     } while (he && he != start && n < max_n);
 
     return n;
