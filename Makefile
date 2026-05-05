@@ -1,15 +1,15 @@
 # GeoDispatch ADS — Makefile
 #
 # Targets:
-#   make              → build everything (executable + bench + tests)
-#   make run-test     → build and run unit tests
-#   make run-bench    → build and run benchmark
-#   make clean        → remove all build outputs
+#   make / build.bat   → geodispatch.exe + bench + test
+#   make run-test      → build and run unit tests
+#   make run-bench     → build and run benchmark
+#   make clean         → remove build outputs
 
 CC     = gcc
 CFLAGS = -std=c11 -O2 -Wall -Wextra -I. -Isrc
 
-LIB_SRC = src/kd.c src/kd_dynamic.c src/voronoi.c src/geometry.c src/algo.c
+LIB_SRC = src/kd.c src/kd_dynamic.c src/voronoi.c src/algo.c
 
 EXE   = geodispatch
 BENCH = bench
@@ -19,15 +19,12 @@ TEST  = test_kd
 
 all: $(EXE) $(BENCH) $(TEST)
 
-# Main executable — called by python/server.py via subprocess
 $(EXE): src/main.c $(LIB_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ -lm
 
-# Benchmarking executable
-$(BENCH): src/bench.c $(LIB_SRC)
+$(BENCH): src/bench.c src/kd.c src/kd_dynamic.c
 	$(CC) $(CFLAGS) -o $@ $^ -lm
 
-# Unit test executable
 $(TEST): src/test.c $(LIB_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ -lm
 

@@ -3,55 +3,26 @@
 
 #include "kd.h"
 
-// Task 2 — DCEL implementation — dcel.h structures
-typedef struct half_edge half_edge_t;
-typedef struct face face_t;
+#define MAX_CELL_VERTS 1024
 
-typedef struct vertex {
-    double x, y;
-    half_edge_t* incident_edge;
-} vertex_t;
+/*
+ * voronoi_cell — compute the Voronoi cell for sites[site_idx].
+ *
+ * Algorithm: start with the bounding box as a polygon, then clip it
+ * by the perpendicular bisector of (sites[site_idx], sites[j]) for
+ * every other j.  What remains is exactly the Voronoi cell — all
+ * points closer to sites[site_idx] than to any other site.
+ *
+ * Clipping uses Sutherland-Hodgman against each half-plane.
+ *
+ * Returns number of polygon vertices written into out_poly
+ * (flat array: x0,y0, x1,y1, ...).  Returns 0 if degenerate.
+ */
+int voronoi_cell(int site_idx, point_t *sites, int n,
+                 double xmin, double ymin, double xmax, double ymax,
+                 double *out_poly);
 
-struct half_edge {
-    vertex_t* origin;
-    half_edge_t* twin;
-    half_edge_t* next;
-    half_edge_t* prev;
-    face_t* face;
-    int is_infinite;
-};
-
-struct face {
-    int site_id;
-    half_edge_t* outer_edge;
-    double area;          // computed by P4
-    int is_underserved;   // set by P4
-};
-
-typedef struct dcel {
-    vertex_t** vertices;
-    int nv;
-    half_edge_t** edges;
-    int ne;
-    face_t** faces;
-    int nf;
-    
-    // Internal capacities for dynamic array reallocation
-    int max_v, max_e, max_f;
-} dcel_t;
-
-// P3 exports
-dcel_t* voronoi_build(point_t* sites, int n);
-face_t** dcel_neighbours(dcel_t* d, int site_id, int* out_count);
-void voronoi_free(dcel_t* d);
-
-// Incremental insertion
-void voronoi_insert_site(dcel_t* d, point_t new_site);
-
-// P4 exports (additions to voronoi.h)
-void clip_to_bbox(dcel_t* d, double xmin, double ymin, double xmax, double ymax);
-double cell_area(dcel_t* d, int face_id);
-void compute_all_areas(dcel_t* d); /* Added by P5 */
-int* flag_underserved(dcel_t* d, double threshold, int* out_count);
+/* Shoelace formula — area of a polygon stored as flat [x,y,...] array. */
+double voronoi_poly_area(double *poly, int n);
 
 #endif

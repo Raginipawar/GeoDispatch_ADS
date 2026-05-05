@@ -9,21 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
-  <!-- Leaflet -->
+  <!-- Leaflet only -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-  <!-- D3 -->
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-
-  <!-- Three.js -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
-  <!-- GSAP -->
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -31,19 +19,19 @@
 
   <!-- ── Loading Screen ─────────────────────────────────────────── -->
   <div id="loading-screen">
-    <canvas id="loading-canvas"></canvas>
-    <div id="loading-text">
-      <div id="typewriter"></div>
-    </div>
+    <div class="spinner"></div>
+    <div id="typewriter"></div>
+  </div>
+
+  <!-- ── Lloyd's running banner ───────────────────────────────────── -->
+  <div id="lloyds-banner" class="hidden">
+    ⏳ Running Lloyd's relaxation… please wait
   </div>
 
   <!-- ── Main App ───────────────────────────────────────────────── -->
   <div id="app" class="hidden">
 
-    <!-- Three.js header particle canvas (z=0) -->
-    <canvas id="particle-canvas"></canvas>
-
-    <!-- Left Panel (z=3) -->
+    <!-- Left Panel -->
     <aside id="panel">
 
       <!-- A — Header -->
@@ -120,6 +108,7 @@
         </div>
         <button class="action-btn" id="btn-optimise">Run Lloyd's</button>
         <button class="action-btn" id="btn-coverage">Show Coverage Map</button>
+        <button class="action-btn secondary" id="btn-reset">Reset Facilities</button>
         <button class="action-btn" id="btn-benchmark">Benchmark Report</button>
       </div>
 
@@ -132,7 +121,7 @@
 
     </aside>
 
-    <!-- Map container (z=1) -->
+    <!-- Map container -->
     <div id="map-container">
       <div id="map"></div>
     </div>
@@ -152,7 +141,7 @@
     <div class="modal-box">
       <button class="modal-close" id="bench-close">✕</button>
       <h2>Benchmark Report</h2>
-      <canvas id="bench-chart"></canvas>
+      <div id="bench-table"></div>
     </div>
   </div>
 

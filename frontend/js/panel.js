@@ -1,9 +1,9 @@
-/* Panel: stats, facility list, mode UI */
+/* Panel: stats, facility list, mode UI — no GSAP */
 
 const PANEL = (() => {
   let allFacilities = [], filtered = [], selectedId = null;
 
-  // ── Stats with countUp ───────────────────────────────────────────
+  // ── Stats countUp ────────────────────────────────────────────────
 
   function _countUp(el, target, duration = 600) {
     const start = parseInt(el.textContent) || 0;
@@ -12,8 +12,7 @@ const PANEL = (() => {
     const timer = setInterval(() => {
       cur += step;
       if ((step > 0 && cur >= target) || (step < 0 && cur <= target)) {
-        el.textContent = target;
-        clearInterval(timer);
+        el.textContent = target; clearInterval(timer);
       } else {
         el.textContent = Math.round(cur);
       }
@@ -33,7 +32,7 @@ const PANEL = (() => {
 
   // ── Facility list ────────────────────────────────────────────────
 
-  function _stateColor(state) {
+  function _stateClass(state) {
     if (state === 'online')     return 'online';
     if (state === 'overloaded') return 'overloaded';
     return 'offline';
@@ -47,7 +46,7 @@ const PANEL = (() => {
       div.className = 'fac-item' + (fac.id === selectedId ? ' selected' : '');
       div.dataset.id = fac.id;
       div.innerHTML = `
-        <span class="fac-dot ${_stateColor(fac.state)}"></span>
+        <span class="fac-dot ${_stateClass(fac.state)}"></span>
         <span class="fac-item-name">${fac.name || 'Facility ' + fac.id}</span>
         <span class="fac-item-type">${fac.type || ''}</span>
       `;
@@ -68,7 +67,6 @@ const PANEL = (() => {
     if (idx !== -1) allFacilities[idx] = { ...allFacilities[idx], ...updatedFac };
     else allFacilities.push(updatedFac);
 
-    // Re-apply filter
     const q = document.getElementById('fac-search').value.toLowerCase();
     filtered = q
       ? allFacilities.filter(f => (f.name || '').toLowerCase().includes(q))
@@ -77,9 +75,7 @@ const PANEL = (() => {
     _renderList(filtered);
   }
 
-  function addFacility(fac) {
-    updateFacility(fac);
-  }
+  function addFacility(fac) { updateFacility(fac); }
 
   function removeFacilityFromList(id) {
     allFacilities = allFacilities.filter(f => f.id !== id);
@@ -116,11 +112,10 @@ const PANEL = (() => {
     box.innerHTML = `
       <div class="fac-name">${fac.name || 'Facility ' + fac.id}</div>
       <div class="fac-type">${fac.type || ''} · id ${fac.id}</div>
-      <div style="margin-top:6px;font-size:0.75rem;color:#6A6A8A">
+      <div style="margin-top:6px;font-size:0.75rem;color:var(--muted)">
         ${fac.lat?.toFixed(5)}, ${fac.lon?.toFixed(5)}
       </div>
     `;
-    gsap.from(box, { y: 8, opacity: 0, duration: 0.3 });
   }
 
   function showKnnResult(facilities) {
@@ -128,12 +123,11 @@ const PANEL = (() => {
     box.classList.remove('hidden');
     box.innerHTML = facilities.map((f, i) =>
       `<div style="margin-bottom:5px">
-        <span style="color:#6C63FF">#${i+1}</span>
+        <span style="color:#606c38;font-weight:600">#${i + 1}</span>
         ${f.name || 'Facility ' + f.id}
         <span class="fac-type"> · ${f.type || ''}</span>
       </div>`
     ).join('');
-    gsap.from(box, { y: 8, opacity: 0, duration: 0.3 });
   }
 
   return {

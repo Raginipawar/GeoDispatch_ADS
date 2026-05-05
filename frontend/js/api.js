@@ -25,4 +25,5 @@ const api = {
                                _req('POST',   '/add-facility', { lat, lon, name, type }),
   removeFacility:(id)         => _req('DELETE',  `/remove-facility/${id}`),
   coverageMap:   ()           => _req('GET',    '/coverage-map'),
+  reset:         ()           => _req('POST',   '/reset'),
 };
