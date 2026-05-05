@@ -1,18 +1,15 @@
 /*
- * GeoDispatch — CLI entry point (P5)
+ * GeoDispatch — CLI entry point
  *
- * Usage:  geodispatch <command> [args]
- *   Facilities are fed via stdin:
- *     first line  = n (count)
- *     next n lines = "x y id"
+ * Reads facilities from stdin:
+ *   first line  = n
+ *   next n lines = "x y id"
  *
  * Commands:
- *   nearest <qx> <qy>
- *   knn     <qx> <qy> <k>
+ *   nearest  <qx> <qy>
+ *   knn      <qx> <qy> <k>
  *   optimise <iterations> <threshold_metres>
  *   coverage
- *
- * All output is JSON on stdout.
  */
 
 #include <stdio.h>
@@ -22,9 +19,7 @@
 #include "geodispatch.h"
 
 #define MAX_FACILITIES 8192
-#define PI 3.14159265358979323846
-
-/* Pune equirectangular projection constants (must match data_loader) */
+#define PI  3.14159265358979323846
 #define LAT0 18.5204
 #define LON0 73.8567
 #define R    6371000.0
@@ -40,20 +35,15 @@ static void xy_to_latlon(double x, double y, double *lat, double *lon) {
     *lon = (x / (cos_lat0 * R)) * (180.0 / PI) + LON0;
 }
 
-/* ── stdin reader ────────────────────────────────────────────────── */
-
 static int read_facilities(point_t *pts, int max_n) {
     int n = 0;
     if (scanf("%d", &n) != 1 || n <= 0) return 0;
     if (n > max_n) n = max_n;
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++)
         if (scanf("%lf %lf %d", &pts[i].x, &pts[i].y, &pts[i].id) != 3)
             return i;
-    }
     return n;
 }
-
-/* ── bbox helper ─────────────────────────────────────────────────── */
 
 static void compute_bbox(point_t *pts, int n,
                          double *xmin, double *ymin,
@@ -68,7 +58,7 @@ static void compute_bbox(point_t *pts, int n,
     }
 }
 
-/* ── commands ────────────────────────────────────────────────────── */
+/* ── nearest ─────────────────────────────────────────────────────── */
 
 static void cmd_nearest(point_t *pts, int n, double qx, double qy) {
     kdnode_t *root = kd_build(pts, n);
@@ -77,6 +67,8 @@ static void cmd_nearest(point_t *pts, int n, double qx, double qy) {
     kd_free(root);
     printf("{\"id\":%d}", res.id);
 }
+
+/* ── knn ─────────────────────────────────────────────────────────── */
 
 static void cmd_knn(point_t *pts, int n, double qx, double qy, int k) {
     kdnode_t *root = kd_build(pts, n);
@@ -93,111 +85,94 @@ static void cmd_knn(point_t *pts, int n, double qx, double qy, int k) {
     if (res) free(res);
 }
 
+/* ── optimise (Lloyd's relaxation) ──────────────────────────────── */
+
 static void cmd_optimise(point_t *pts, int n, int iters, double thresh) {
     double xmin, ymin, xmax, ymax;
     compute_bbox(pts, n, &xmin, &ymin, &xmax, &ymax);
     double pad = 8000.0;
 
-    kdnode_t *root = kd_build(pts, n);
-    dcel_t   *dcel = voronoi_build(pts, n);
-    clip_to_bbox(dcel, xmin - pad, ymin - pad, xmax + pad, ymax + pad);
-    compute_all_areas(dcel);
-
-    lloyds_result_t *res = run_lloyds(&dcel, &root, pts, n, iters, thresh);
-
+    lloyds_result_t *res = run_lloyds(pts, n,
+                                      xmin - pad, ymin - pad,
+                                      xmax + pad, ymax + pad,
+                                      iters, thresh);
     printf("[");
     for (int i = 0; i < res->nmoves; i++) {
         if (i) printf(",");
         facility_move_t *m = &res->moves[i];
         double flat, flon, tlat, tlon;
-        xy_to_latlon(m->from.x, m->from.y, &flat, &flon);
-        xy_to_latlon(m->to.x,   m->to.y,   &tlat, &tlon);
+        xy_to_latlon(m->from_x, m->from_y, &flat, &flon);
+        xy_to_latlon(m->to_x,   m->to_y,   &tlat, &tlon);
         printf("{\"id\":%d,"
                "\"from_x\":%.4f,\"from_y\":%.4f,"
                "\"to_x\":%.4f,\"to_y\":%.4f,"
                "\"from_lat\":%.6f,\"from_lon\":%.6f,"
                "\"to_lat\":%.6f,\"to_lon\":%.6f}",
                m->site_id,
-               m->from.x, m->from.y,
-               m->to.x,   m->to.y,
+               m->from_x, m->from_y,
+               m->to_x,   m->to_y,
                flat, flon, tlat, tlon);
     }
     printf("]");
-
     free_lloyds_result(res);
-    voronoi_free(dcel);
-    kd_free(root);
 }
+
+/* ── coverage map ────────────────────────────────────────────────── */
 
 static void cmd_coverage(point_t *pts, int n) {
     double xmin, ymin, xmax, ymax;
     compute_bbox(pts, n, &xmin, &ymin, &xmax, &ymax);
     double pad = 8000.0;
+    double bx0=xmin-pad, by0=ymin-pad, bx1=xmax+pad, by1=ymax+pad;
 
-    dcel_t *dcel = voronoi_build(pts, n);
-    clip_to_bbox(dcel, xmin - pad, ymin - pad, xmax + pad, ymax + pad);
-    compute_all_areas(dcel);
+    double  poly[MAX_CELL_VERTS * 2];
+    double *areas  = calloc(n, sizeof(double));
+    int    *npts   = calloc(n, sizeof(int));
+    double **polys = calloc(n, sizeof(double *));
 
-    /* Adaptive threshold: mean + 0.8 * std */
-    double mean_a = 0.0, std_a = 0.0;
-    int valid = 0;
-    for (int i = 0; i < dcel->nf; i++) {
-        if (dcel->faces[i] && dcel->faces[i]->area > 0.0) {
-            mean_a += dcel->faces[i]->area;
-            valid++;
-        }
+    for (int i = 0; i < n; i++) {
+        int k = voronoi_cell(i, pts, n, bx0, by0, bx1, by1, poly);
+        if (k < 3) continue;
+        double a = voronoi_poly_area(poly, k);
+        if (a < 1e4) continue;
+        areas[i] = a;
+        npts[i]  = k;
+        polys[i] = malloc(k * 2 * sizeof(double));
+        memcpy(polys[i], poly, k * 2 * sizeof(double));
     }
+
+    /* underserved threshold: mean + 0.8 * std */
+    double mean_a = 0.0; int valid = 0;
+    for (int i = 0; i < n; i++) if (areas[i] > 0) { mean_a += areas[i]; valid++; }
     if (valid > 0) mean_a /= valid;
-    for (int i = 0; i < dcel->nf; i++) {
-        if (dcel->faces[i] && dcel->faces[i]->area > 0.0) {
-            double d = dcel->faces[i]->area - mean_a;
-            std_a += d * d;
-        }
-    }
+    double std_a = 0.0;
+    for (int i = 0; i < n; i++) if (areas[i] > 0) { double d=areas[i]-mean_a; std_a+=d*d; }
     if (valid > 0) std_a = sqrt(std_a / valid);
-
-    int uc = 0;
-    int *under = flag_underserved(dcel, mean_a + 0.8 * std_a, &uc);
-    if (under) free(under);
-
-    coverage_map_t *cmap = get_coverage_map(dcel);
+    double thresh = mean_a + 0.8 * std_a;
 
     printf("[");
     int first = 1;
-    if (cmap) {
-        for (int i = 0; i < cmap->ncells; i++) {
-            coverage_cell_t *cell = &cmap->cells[i];
-            if (cell->num_points < 3) continue;
-
-            if (!first) printf(",");
-            first = 0;
-
-            printf("{\"site_id\":%d,\"area\":%.2f,\"is_underserved\":%d,\"polygon\":[",
-                   cell->site_id, cell->area, cell->is_underserved);
-
-            for (int j = 0; j < cell->num_points; j++) {
-                double lat, lon;
-                xy_to_latlon(cell->polygon_coords[j * 2],
-                             cell->polygon_coords[j * 2 + 1],
-                             &lat, &lon);
-                if (j) printf(",");
-                printf("[%.6f,%.6f]", lon, lat);   /* GeoJSON: [lon, lat] */
-            }
-            /* Close the ring */
-            {
-                double lat, lon;
-                xy_to_latlon(cell->polygon_coords[0],
-                             cell->polygon_coords[1],
-                             &lat, &lon);
-                printf(",[%.6f,%.6f]", lon, lat);
-            }
-            printf("]}");
+    for (int i = 0; i < n; i++) {
+        if (!polys[i]) continue;
+        if (!first) printf(",");
+        first = 0;
+        printf("{\"site_id\":%d,\"area\":%.2f,\"is_underserved\":%d,\"polygon\":[",
+               pts[i].id, areas[i], areas[i] > thresh ? 1 : 0);
+        for (int j = 0; j < npts[i]; j++) {
+            double lat, lon;
+            xy_to_latlon(polys[i][2*j], polys[i][2*j+1], &lat, &lon);
+            if (j) printf(",");
+            printf("[%.6f,%.6f]", lon, lat);
         }
-        free_coverage_map(cmap);
+        { double lat, lon;
+          xy_to_latlon(polys[i][0], polys[i][1], &lat, &lon);
+          printf(",[%.6f,%.6f]", lon, lat); }
+        printf("]}");
+        free(polys[i]);
     }
     printf("]");
 
-    voronoi_free(dcel);
+    free(areas); free(npts); free(polys);
 }
 
 /* ── main ────────────────────────────────────────────────────────── */
@@ -210,7 +185,7 @@ int main(int argc, char *argv[]) {
 
     init_proj();
 
-    point_t *pts = (point_t *)malloc(MAX_FACILITIES * sizeof(point_t));
+    point_t *pts = malloc(MAX_FACILITIES * sizeof(point_t));
     if (!pts) { fprintf(stderr, "out of memory\n"); return 1; }
 
     int n = read_facilities(pts, MAX_FACILITIES);
@@ -218,23 +193,18 @@ int main(int argc, char *argv[]) {
 
     const char *cmd = argv[1];
 
-    if (strcmp(cmd, "nearest") == 0 && argc >= 4) {
+    if      (strcmp(cmd, "nearest")  == 0 && argc >= 4)
         cmd_nearest(pts, n, atof(argv[2]), atof(argv[3]));
-
-    } else if (strcmp(cmd, "knn") == 0 && argc >= 5) {
+    else if (strcmp(cmd, "knn")      == 0 && argc >= 5)
         cmd_knn(pts, n, atof(argv[2]), atof(argv[3]), atoi(argv[4]));
-
-    } else if (strcmp(cmd, "optimise") == 0 && argc >= 4) {
+    else if (strcmp(cmd, "optimise") == 0 && argc >= 4)
         cmd_optimise(pts, n, atoi(argv[2]), atof(argv[3]));
-
-    } else if (strcmp(cmd, "coverage") == 0) {
+    else if (strcmp(cmd, "coverage") == 0)
         cmd_coverage(pts, n);
-
-    } else {
+    else {
         fprintf(stderr, "unknown command: %s\n", cmd);
         printf("{}");
-        free(pts);
-        return 1;
+        free(pts); return 1;
     }
 
     free(pts);

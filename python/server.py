@@ -9,10 +9,11 @@ Python's only jobs: read JSON, route the request, call C, return JSON.
 """
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import json, subprocess, os, math
+import json, subprocess, os, math, mimetypes
 from pathlib import Path
 
 ROOT       = Path(__file__).resolve().parent.parent
+FRONTEND   = ROOT / "frontend"
 DATA_FILE  = ROOT / "data" / "pune_facilities.json"
 STATE_FILE = ROOT / "data" / "state.json"
 EXE        = str(ROOT / ("geodispatch.exe" if os.name == "nt" else "geodispatch"))
@@ -55,15 +56,23 @@ def _stdin_for(facilities):
 def _call_c(command, args, facilities=None):
     """Run geodispatch executable, pipe facilities via stdin, return parsed JSON."""
     facs = facilities if facilities is not None else _active()
-    result = subprocess.run(
-        [EXE, command] + [str(a) for a in args],
-        input=_stdin_for(facs),
-        capture_output=True,
-        text=True
-    )
-    if result.returncode != 0:
-        print(f"[C] stderr: {result.stderr.strip()}", flush=True)
-    return json.loads(result.stdout) if result.stdout.strip() else {}
+    try:
+        result = subprocess.run(
+            [EXE, command] + [str(a) for a in args],
+            input=_stdin_for(facs),
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if result.returncode != 0:
+            print(f"[C] stderr: {result.stderr.strip()}", flush=True)
+        return json.loads(result.stdout) if result.stdout.strip() else {}
+    except FileNotFoundError:
+        print(f"[ERROR] {EXE} not found — run: build.bat  (or gcc -std=c11 -O2 -I. -Isrc -o geodispatch.exe src/main.c src/kd.c src/kd_dynamic.c src/voronoi.c src/algo.c -lm)", flush=True)
+        return {}
+    except Exception as e:
+        print(f"[ERROR] _call_c failed: {e}", flush=True)
+        return {}
 
 def _enrich(pt):
     """Add name/type/lat/lon/state to a {id:N} dict from C."""
@@ -106,9 +115,29 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── GET ──────────────────────────────────────────────────────
 
+    def _serve_static(self, rel_path):
+        """Serve a file from the frontend/ directory."""
+        file_path = FRONTEND / rel_path.lstrip("/")
+        if not file_path.exists() or not file_path.is_file():
+            self._json({"error": "not found"}, 404); return
+        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+        data = file_path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
         p = self.path.split("?")[0]
 
+        # ── Static frontend files ─────────────────────────────────
+        if p == "/" or p == "":
+            self._serve_static("index.html"); return
+        if p.startswith("/css/") or p.startswith("/js/"):
+            self._serve_static(p); return
+
+        # ── API routes ────────────────────────────────────────────
         if p == "/facilities":
             facs = [{"id": fid,
                      "lat":   m["lat"], "lon":   m["lon"],
@@ -152,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
     # ── POST ─────────────────────────────────────────────────────
 
     def do_POST(self):
-        global _next_id
+        global _next_id, _meta, _states
         p = self.path
         b = self._body()
 
@@ -199,6 +228,14 @@ class Handler(BaseHTTPRequestHandler):
             _states[fid] = state
             _save_states()
             self._json({"ok": True, "prev": state, "new": state, "msg": "Transition complete"})
+
+        elif p == "/reset":
+            fresh = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+            _meta     = {f["id"]: f for f in fresh}
+            _states   = {f["id"]: "online" for f in fresh}
+            _next_id  = max(_meta) + 1 if _meta else 0
+            if STATE_FILE.exists(): STATE_FILE.unlink()
+            self._json({"ok": True, "count": len(_meta)})
 
         elif p == "/add-facility":
             x, y = _xy(b["lat"], b["lon"])
